@@ -1,0 +1,871 @@
+openapi: 3.0.3
+info:
+  title: MASTERPOINT API
+  version: 2.0.0
+servers:
+  - url: http://localhost:3000
+  - url: https://localhost
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Kunden
+  - name: Services
+  - name: Termine
+  - name: Reports
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error: { type: string }
+        requestId: { type: string }
+      required: [error]
+
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+      required: [email, password]
+
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        token: { type: string }
+        user:
+          type: object
+          additionalProperties: false
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string, enum: [admin, mitarbeiter] }
+            tenantId: { type: string }
+            tenantName: { type: string }
+          required: [id, email, role, tenantId, tenantName]
+      required: [token, user]
+
+    MeResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        user:
+          type: object
+          additionalProperties: false
+          properties:
+            sub: { type: string }
+            email: { type: string, format: email }
+            role: { type: string, enum: [admin, mitarbeiter] }
+            tenantId: { type: string }
+            tenantName: { type: string }
+          required: [sub, email, role, tenantId, tenantName]
+      required: [user]
+
+    UserCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        role: { type: string, enum: [admin, mitarbeiter] }
+        tenantId: { type: string }
+        tenantName: { type: string }
+      required: [email, password, role]
+
+    UserPublic:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, mitarbeiter] }
+        tenantId: { type: string }
+        createdAt: { type: string }
+      required: [id, email, role, tenantId, createdAt]
+
+    UsersListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/UserPublic" }
+      required: [data]
+
+    Kunde:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string }
+        email: { type: string, format: email, nullable: true }
+        telefon: { type: string, nullable: true }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+      required: [id, tenantId, name, createdAt, updatedAt]
+
+    KundeCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        telefon: { type: string }
+      required: [name]
+
+    KundeUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        telefon: { type: string }
+
+    KundenListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Kunde" }
+      required: [data]
+
+    Service:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string }
+        dauerMinuten: { type: integer }
+        preis: { type: number }
+        kategorie: { type: string, nullable: true }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+      required: [id, tenantId, name, dauerMinuten, preis, createdAt, updatedAt]
+
+    ServiceCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        dauerMinuten: { type: integer, minimum: 1 }
+        preis: { type: number, minimum: 0 }
+        kategorie: { type: string }
+      required: [name, dauerMinuten, preis]
+
+    ServiceUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        dauerMinuten: { type: integer, minimum: 1 }
+        preis: { type: number, minimum: 0 }
+        kategorie: { type: string }
+
+    ServicesListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Service" }
+      required: [data]
+
+    Termin:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        datum:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        zeit:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endzeit:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          nullable: true
+        kundeId: { type: string, nullable: true }
+        serviceId: { type: string, nullable: true }
+        notiz: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [planned, confirmed, cancelled, completed, no_show]
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    TerminCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        datum:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        zeit:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        kundeId: { type: string, nullable: true }
+        serviceId: { type: string, nullable: true }
+        notiz: { type: string }
+      required: [datum, zeit]
+
+    TerminUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        datum:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        zeit:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        kundeId: { type: string, nullable: true }
+        serviceId: { type: string, nullable: true }
+        notiz: { type: string }
+
+    TermineListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Termin" }
+      required: [page, limit, total, data]
+
+    UmsatzReportResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        from: { type: string, nullable: true }
+        to: { type: string, nullable: true }
+        total: { type: number }
+        count: { type: integer }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness (DB)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+        "503":
+          description: Not Ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /openapi.yaml:
+    get:
+      tags: [Health]
+      summary: OpenAPI spec (YAML)
+      security: []
+      responses:
+        "200":
+          description: OK
+
+  /openapi.json:
+    get:
+      tags: [Health]
+      summary: OpenAPI spec (JSON)
+      security: []
+      responses:
+        "200":
+          description: OK
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user (from JWT)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /auth/users:
+    get:
+      tags: [Users]
+      summary: List users (admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsersListResponse" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    post:
+      tags: [Users]
+      summary: Create user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPublic" }
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /kunden:
+    get:
+      tags: [Kunden]
+      summary: List customers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KundenListResponse" }
+
+    post:
+      tags: [Kunden]
+      summary: Create customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KundeCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Kunde" }
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /kunden/{id}:
+    get:
+      tags: [Kunden]
+      summary: Get customer by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Kunde" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    put:
+      tags: [Kunden]
+      summary: Update customer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KundeUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Kunde" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    delete:
+      tags: [Kunden]
+      summary: Delete customer (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: No Content
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /kunden/{id}/termine:
+    get:
+      tags: [Kunden, Termine]
+      summary: List appointments for a customer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: datum
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - in: query
+          name: serviceId
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermineListResponse" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /services:
+    get:
+      tags: [Services]
+      summary: List services
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServicesListResponse" }
+
+    post:
+      tags: [Services]
+      summary: Create service (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /services/{id}:
+    get:
+      tags: [Services]
+      summary: Get service by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    put:
+      tags: [Services]
+      summary: Update service (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    delete:
+      tags: [Services]
+      summary: Delete service (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /termine:
+    get:
+      tags: [Termine]
+      summary: List appointments (filters + pagination)
+      parameters:
+        - in: query
+          name: datum
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - in: query
+          name: kundeId
+          schema: { type: string }
+        - in: query
+          name: serviceId
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermineListResponse" }
+
+    post:
+      tags: [Termine]
+      summary: Create appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TerminCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /termine/{id}:
+    get:
+      tags: [Termine]
+      summary: Get appointment by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    put:
+      tags: [Termine]
+      summary: Update appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TerminUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    delete:
+      tags: [Termine]
+      summary: Delete appointment (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /termine/{id}/confirm:
+    post:
+      tags: [Termine]
+      summary: Confirm appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /termine/{id}/cancel:
+    post:
+      tags: [Termine]
+      summary: Cancel appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /termine/{id}/complete:
+    post:
+      tags: [Termine]
+      summary: Complete appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Termin" }
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /reports/umsatz:
+    get:
+      tags: [Reports]
+      summary: Umsatz report (admin)
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - in: query
+          name: to
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UmsatzReportResponse" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }

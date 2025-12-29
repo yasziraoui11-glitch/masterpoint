@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  api-smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create env file
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://masterpoint:masterpoint@db:5432/masterpoint
+          JWT_SECRET=ci-secret
+          NODE_ENV=production
+          API_PORT=3000
+          WEB_PORT=8080
+          EOF
+
+      - name: Start stack
+        run: |
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml up -d --build
+
+      - name: Wait for API
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost/api/health | grep -q '"ok":true'; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API not ready"
+          docker compose -p infra logs
+          exit 1
+
+      - name: Run smoke test
+        run: |
+          chmod +x tools/smoke_api.sh
+          ./tools/smoke_api.sh
+
+      - name: Shutdown stack
+        if: always()
+        run: |
+          docker compose -p infra down -v

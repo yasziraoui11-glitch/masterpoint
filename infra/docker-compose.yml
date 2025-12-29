@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: masterpoint
+      POSTGRES_USER: masterpoint
+      POSTGRES_PASSWORD: masterpoint
+    ports:
+      - "5432:5432"
+    volumes:
+      - mp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U masterpoint -d masterpoint"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../backend
+    env_file:
+      - ../.env
+    environment:
+      PORT: "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT}:3000"
+    command: ["sh","-lc","npx prisma migrate deploy && node src/server.js"]
+
+  worker:
+    build:
+      context: ../backend
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    command: ["sh","-lc","node src/worker.js"]
+
+  web:
+    build:
+      context: ../frontend
+    env_file:
+      - ../.env
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PORT}:8080"
+
+volumes:
+  mp_pgdata:
