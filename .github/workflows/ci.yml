@@ -16,44 +16,43 @@ jobs:
       - name: Prepare env for docker compose
         shell: bash
         run: |
-          cat > .env << 'EOF'
+          set -euo pipefail
+
+          # JWT_SECRET: Secret nutzen, sonst generieren (>=24 chars)
+          JWT_SECRET="${{ secrets.JWT_SECRET }}"
+          if [ -z "${JWT_SECRET}" ] || [ "${#JWT_SECRET}" -lt 24 ]; then
+            JWT_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          fi
+
+          cat > .env << EOF
           WEB_PORT=8080
           API_PORT=3000
           DATABASE_URL=postgresql://masterpoint:masterpoint@db:5432/masterpoint?schema=public
+          JWT_SECRET=${JWT_SECRET}
+
           INITIAL_ADMIN_EMAIL=admin@example.com
           INITIAL_ADMIN_PASSWORD=admin123
           INITIAL_TENANT_ID=t_default
           INITIAL_TENANT_NAME=Default Tenant
           EOF
-          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
 
       - name: Docker info
         shell: bash
         run: docker version && docker compose version
 
-      - name: Start DB only
+      - name: Start stack (CI override)
         shell: bash
         run: |
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml up -d db
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml ps
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml logs --no-color --tail=200 db
-
-      - name: Apply Prisma schema to DB (db push)
-        shell: bash
-        run: |
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml run --rm api sh -lc "npx prisma db push"
-
-      - name: Start stack
-        shell: bash
-        run: |
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml up -d api worker web
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml ps
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml logs --no-color --tail=200 api worker web
+          set -euo pipefail
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml up -d --build
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml ps
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml logs --no-color --tail=200 api worker web db
 
       - name: Wait for API via web proxy
         shell: bash
         run: |
-          for i in {1..90}; do
+          set -euo pipefail
+          for i in {1..120}; do
             if curl -fsS "http://localhost:8080/api/health" >/dev/null; then
               echo "API ready"
               exit 0
@@ -61,12 +60,13 @@ jobs:
             sleep 2
           done
           echo "API not ready"
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml logs --no-color --tail=400 api worker web db
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml logs --no-color --tail=400 api worker web db
           exit 1
 
       - name: Run smoke test
         shell: bash
         run: |
+          set -euo pipefail
           chmod +x tools/smoke_api.sh
           BASE_URL="http://localhost:8080" EMAIL="admin@example.com" PASSWORD="admin123" ./tools/smoke_api.sh
 
@@ -74,4 +74,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          docker compose --env-file .env -p infra -f infra/docker-compose.yml down -v
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml down -v

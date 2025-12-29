@@ -1,11 +1,6 @@
 services:
   api:
-    environment:
-      # in CI erzwingen wir db push statt migrations
-      PRISMA_MIGRATE: "0"
     command: ["sh", "-lc", "npx prisma db push && node src/server.js"]
 
   worker:
-    environment:
-      PRISMA_MIGRATE: "0"
     command: ["sh", "-lc", "node src/worker.js"]
