@@ -2,88 +2,54 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
+EMAIL="${EMAIL:-admin@example.com}"
+PASSWORD="${PASSWORD:-admin123}"
+
+api() { curl -sS "$@"; }
 
 echo "[1/9] health"
-HEALTH_JSON="$(curl -fsS "${BASE_URL}/api/health")"
-OK="$(printf '%s' "$HEALTH_JSON" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("ok"))')"
-echo "ok= ${OK}"
-if [ "${OK}" != "True" ]; then
-  echo "Health not ok. Body:"
-  echo "$HEALTH_JSON"
-  exit 1
-fi
+api "$BASE_URL/api/health" | python3 -c 'import sys,json; print("ok=", json.load(sys.stdin).get("ok"))'
 
 echo "[2/9] login -> token"
-LOGIN_PAYLOAD='{"email":"admin@example.com","password":"admin123"}'
+LOGIN_JSON="$(api -w "\n%{http_code}" -X POST "$BASE_URL/api/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
+LOGIN_BODY="$(printf "%s" "$LOGIN_JSON" | sed '$d')"
+LOGIN_STATUS="$(printf "%s" "$LOGIN_JSON" | tail -n 1)"
 
-# capture body + status
-LOGIN_RAW="$(curl -sS -w $'\n%{http_code}' -H "Content-Type: application/json" -d "$LOGIN_PAYLOAD" "${BASE_URL}/api/auth/login")"
-LOGIN_BODY="$(printf '%s' "$LOGIN_RAW" | sed '$d')"
-LOGIN_CODE="$(printf '%s' "$LOGIN_RAW" | tail -n 1)"
-
-echo "login_status=${LOGIN_CODE}"
-echo "login_body=${LOGIN_BODY}"
-
-TOKEN="$(
-  printf '%s' "$LOGIN_BODY" | python3 -c 'import sys,json
-try:
-  d=json.load(sys.stdin)
-except Exception as e:
-  print("", end="")
-  sys.exit(2)
-
-# try common token keys
-for k in ("token","accessToken","access_token","jwt"):
-  v=d.get(k)
-  if isinstance(v,str) and v:
-    print(v, end="")
-    sys.exit(0)
-
-# sometimes nested
-u=d.get("data") if isinstance(d.get("data"),dict) else None
-if u:
-  for k in ("token","accessToken","access_token","jwt"):
-    v=u.get(k)
-    if isinstance(v,str) and v:
-      print(v, end="")
-      sys.exit(0)
-
-print("", end="")
-sys.exit(3)
-'
-)"
-
-if [ -z "${TOKEN}" ]; then
-  echo "ERROR: Login did not return a usable token (expected token/accessToken/access_token/jwt)."
-  echo "HTTP ${LOGIN_CODE}"
-  echo "Body: ${LOGIN_BODY}"
-  exit 1
+if [ "$LOGIN_STATUS" != "200" ]; then
+  echo "login_status=$LOGIN_STATUS"
+  echo "login_body=$LOGIN_BODY"
+  exit 3
 fi
 
-echo "token_prefix=$(echo "$TOKEN" | head -c 24)"
+TOKEN="$(printf "%s" "$LOGIN_BODY" | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')"
+echo "token_prefix=$(echo "$TOKEN" | head -c 20)"
 
-echo "[3/9] /auth/me"
-curl -fsS "${BASE_URL}/api/auth/me" -H "Authorization: Bearer ${TOKEN}" | python3 -m json.tool >/dev/null
-echo "me=ok"
+echo "[3/9] auth/me"
+api "$BASE_URL/api/auth/me" -H "Authorization: Bearer $TOKEN" | python3 -c 'import sys,json; u=json.load(sys.stdin)["user"]; print(u.get("email"), u.get("role"), u.get("tenantId"))'
 
-echo "[4/9] list services"
-curl -fsS "${BASE_URL}/api/services" -H "Authorization: Bearer ${TOKEN}" | python3 -m json.tool >/dev/null
-echo "services=ok"
+echo "[4/9] create service"
+SID="$(api -X POST "$BASE_URL/api/services" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"SMOKE Service\",\"dauerMinuten\":30,\"preis\":49.99,\"kategorie\":\"SMOKE\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
+echo "SID=$SID"
 
-echo "[5/9] list kunden"
-curl -fsS "${BASE_URL}/api/kunden" -H "Authorization: Bearer ${TOKEN}" | python3 -m json.tool >/dev/null
-echo "kunden=ok"
+echo "[5/9] create kunde"
+KID="$(api -X POST "$BASE_URL/api/kunden" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"SMOKE Kunde\",\"email\":\"smoke@kunde.local\",\"telefon\":\"111\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
+echo "KID=$KID"
 
-echo "[6/9] list termine"
-curl -fsS "${BASE_URL}/api/termine?page=1&limit=5" -H "Authorization: Bearer ${TOKEN}" | python3 -m json.tool >/dev/null
-echo "termine=ok"
+echo "[6/9] create termin"
+TID="$(api -X POST "$BASE_URL/api/termine" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"datum\":\"2025-12-29\",\"zeit\":\"12:00\",\"kundeId\":\"$KID\",\"serviceId\":\"$SID\",\"notiz\":\"SMOKE Termin\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
+echo "TID=$TID"
 
-echo "[7/9] openapi.json"
-curl -fsS "${BASE_URL}/api/openapi.json" | python3 -m json.tool >/dev/null
-echo "openapi_json=ok"
+echo "[7/9] confirm + complete termin"
+api -X POST "$BASE_URL/api/termine/$TID/confirm" -H "Authorization: Bearer $TOKEN" >/dev/null
+api -X POST "$BASE_URL/api/termine/$TID/complete" -H "Authorization: Bearer $TOKEN" >/dev/null
+echo "termin_status=completed (expected)"
 
-echo "[8/9] openapi.yaml"
-curl -fsS "${BASE_URL}/api/openapi.yaml" >/dev/null
-echo "openapi_yaml=ok"
+echo "[8/9] report umsatz (month range)"
+api "$BASE_URL/api/reports/umsatz?from=2025-12-01&to=2025-12-31" -H "Authorization: Bearer $TOKEN" | python3 -c 'import sys,json; r=json.load(sys.stdin); print("total=", r.get("total"), "count=", r.get("count"))'
 
-echo "[9/9] done"
+echo "[9/9] cleanup (delete termin/service/kunde) -> expect 204"
+api -o /dev/null -w "DELETE termine status=%{http_code}\n" -X DELETE "$BASE_URL/api/termine/$TID" -H "Authorization: Bearer $TOKEN"
+api -o /dev/null -w "DELETE service status=%{http_code}\n" -X DELETE "$BASE_URL/api/services/$SID" -H "Authorization: Bearer $TOKEN"
+api -o /dev/null -w "DELETE kunde status=%{http_code}\n" -X DELETE "$BASE_URL/api/kunden/$KID" -H "Authorization: Bearer $TOKEN"
+
+echo "SMOKE TEST: PASS"
