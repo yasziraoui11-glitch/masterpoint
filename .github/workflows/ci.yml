@@ -18,14 +18,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Ports
           WEB_PORT=8080
           API_PORT=3000
-
-          # DB URL (compose-internal)
           DATABASE_URL="postgresql://masterpoint:masterpoint@db:5432/masterpoint?schema=public"
 
-          # JWT_SECRET: Secret nehmen, sonst generieren (>=24 chars)
           JWT_SECRET="${{ secrets.JWT_SECRET }}"
           if [ -z "${JWT_SECRET}" ] || [ "${#JWT_SECRET}" -lt 24 ]; then
             JWT_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
@@ -49,13 +45,13 @@ jobs:
           docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml up -d --build
           docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml ps
 
-      - name: Wait for API (direct)
+      - name: Wait for API via web proxy (expected /api/*)
         shell: bash
         run: |
           set -euo pipefail
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:3000/health" >/dev/null; then
-              echo "API ready"
+            if curl -fsS "http://localhost:8080/api/health" >/dev/null; then
+              echo "API ready (via web proxy)"
               exit 0
             fi
             sleep 2
@@ -64,12 +60,12 @@ jobs:
           docker compose --env-file .env -p infra -f infra/docker-compose.yml -f infra/docker-compose.ci.yml logs --no-color --tail=400 api worker web db
           exit 1
 
-      - name: Run smoke test (direct)
+      - name: Run smoke test via web proxy
         shell: bash
         run: |
           set -euo pipefail
           chmod +x tools/smoke_api.sh
-          BASE_URL="http://localhost:3000" ./tools/smoke_api.sh
+          BASE_URL="http://localhost:8080" ./tools/smoke_api.sh
 
       - name: Shutdown stack
         if: always()
