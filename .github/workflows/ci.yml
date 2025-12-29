@@ -10,45 +10,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create env file
+      - name: Create .env for CI (required runtime env)
+        shell: bash
         run: |
-          cat > .env <<'EOF'
-          DATABASE_URL=postgresql://masterpoint:masterpoint@db:5432/masterpoint
-          JWT_SECRET=ci-secret
-          NODE_ENV=production
-          API_PORT=3000
-          WEB_PORT=8080
+          set -euo pipefail
+          # JWT_SECRET must be >= 24 chars; we generate a safe value for CI runs
+          JWT_SECRET="$(openssl rand -hex 32)"
+          cat > .env <<EOF
+          DATABASE_URL=postgresql://masterpoint:masterpoint@db:5432/masterpoint?schema=public
+          JWT_SECRET=${JWT_SECRET}
           EOF
+          echo "Wrote .env (DATABASE_URL + JWT_SECRET)"
 
-      - name: Start stack
+      - name: Build + start stack
+        shell: bash
         run: |
+          set -euo pipefail
           docker compose --env-file .env -p infra -f infra/docker-compose.yml up -d --build
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml ps
 
       - name: Wait for API
+        shell: bash
         run: |
-          for i in {1..30}; do
-            if curl -s http://localhost/api/health | grep -q '"ok":true'; then
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost/api/health >/dev/null; then
               echo "API ready"
               exit 0
             fi
             sleep 2
           done
           echo "API not ready"
-          docker compose -p infra logs
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml logs --no-color api worker
           exit 1
 
       - name: Run smoke test
+        shell: bash
         run: |
+          set -euo pipefail
           chmod +x tools/smoke_api.sh
           ./tools/smoke_api.sh
 
       - name: Shutdown stack
         if: always()
+        shell: bash
         run: |
-          docker compose -p infra down -v
+          docker compose --env-file .env -p infra -f infra/docker-compose.yml down -v
