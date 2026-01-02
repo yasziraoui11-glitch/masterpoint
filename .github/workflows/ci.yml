@@ -2,38 +2,41 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   pull_request:
 
 jobs:
   api-smoke-test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Validate required secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${{ secrets.JWT_SECRET }}" || (echo "Missing secret: JWT_SECRET" && exit 1)
-          test "${#{{ secrets.JWT_SECRET }}}" -ge 24 || (echo "JWT_SECRET must be >= 24 chars" && exit 1)
-          test -n "${{ secrets.INITIAL_ADMIN_EMAIL }}" || (echo "Missing secret: INITIAL_ADMIN_EMAIL" && exit 1)
-          test -n "${{ secrets.INITIAL_ADMIN_PASSWORD }}" || (echo "Missing secret: INITIAL_ADMIN_PASSWORD" && exit 1)
-          test "${#{{ secrets.INITIAL_ADMIN_PASSWORD }}}" -ge 8 || (echo "INITIAL_ADMIN_PASSWORD must be >= 8 chars" && exit 1)
 
       - name: Prepare env for docker compose
         shell: bash
         run: |
           set -euo pipefail
-          cat > .env << 'ENVEOF'
+
+          # Base env for compose
+          cat > .env << 'EOF'
           WEB_PORT=8080
           API_PORT=3000
           DATABASE_URL=postgresql://masterpoint:masterpoint@db:5432/masterpoint?schema=public
-          ENVEOF
-          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-          echo "INITIAL_ADMIN_EMAIL=${{ secrets.INITIAL_ADMIN_EMAIL }}" >> .env
-          echo "INITIAL_ADMIN_PASSWORD=${{ secrets.INITIAL_ADMIN_PASSWORD }}" >> .env
+
+          # Ensure initial admin exists so smoke test login works
+          INITIAL_ADMIN_EMAIL=admin@example.com
+          INITIAL_ADMIN_PASSWORD=admin123
+          INITIAL_TENANT_ID=t_default
+          INITIAL_TENANT_NAME=Default Tenant
+          EOF
+
+          # JWT_SECRET: prefer repo secret, otherwise generate (>=24 chars required)
+          JWT_SECRET="${{ secrets.JWT_SECRET }}"
+          if [ -z "${JWT_SECRET}" ] || [ "${#JWT_SECRET}" -lt 24 ]; then
+            JWT_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          fi
+          echo "JWT_SECRET=${JWT_SECRET}" >> .env
 
       - name: Docker info
         shell: bash
@@ -60,12 +63,12 @@ jobs:
           docker compose --env-file .env -p infra -f infra/docker-compose.yml up -d api worker web
           docker compose --env-file .env -p infra -f infra/docker-compose.yml ps
 
-      - name: Wait for API (direct)
+      - name: Wait for API via web proxy
         shell: bash
         run: |
           set -euo pipefail
           for i in {1..60}; do
-            if curl -fsS "http://localhost:3000/health" >/dev/null; then
+            if curl -fsS "http://localhost:8080/api/health" >/dev/null; then
               echo "API ready"
               exit 0
             fi
@@ -75,15 +78,56 @@ jobs:
           docker compose --env-file .env -p infra -f infra/docker-compose.yml logs --no-color --tail=400 api worker web db
           exit 1
 
-      - name: Run smoke test (direct API)
+      - name: Validate OpenAPI (exists, valid JSON, required routes present)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Fetch OpenAPI (retry a bit in case it appears slightly after /health)
+          for i in {1..20}; do
+            if curl -fsS "http://localhost:8080/api/openapi.json" -o /tmp/openapi.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -s /tmp/openapi.json
+
+          # Validate JSON + validate required paths
+          python3 - <<'PY'
+          import json, sys
+          p="/tmp/openapi.json"
+          with open(p, "r", encoding="utf-8") as f:
+            spec=json.load(f)
+
+          if "paths" not in spec or not isinstance(spec["paths"], dict):
+            raise SystemExit("openapi.json missing 'paths' object")
+
+          paths=spec["paths"]
+
+          required_paths = [
+            "/health",
+            "/auth/login",
+            "/auth/me",
+            "/kunden",
+            "/services",
+            "/termine",
+            "/reports/umsatz",
+          ]
+
+          missing=[rp for rp in required_paths if rp not in paths]
+          if missing:
+            raise SystemExit("openapi.json missing required paths: " + ", ".join(missing))
+
+          print("OpenAPI OK:", len(paths), "paths")
+          PY
+
+      - name: Run smoke test
         shell: bash
         run: |
           set -euo pipefail
           chmod +x tools/smoke_api.sh
-          BASE_URL="http://localhost:3000" \
-          EMAIL="${{ secrets.INITIAL_ADMIN_EMAIL }}" \
-          PASSWORD="${{ secrets.INITIAL_ADMIN_PASSWORD }}" \
-          ./tools/smoke_api.sh
+          BASE_URL="http://localhost:8080" ./tools/smoke_api.sh
 
       - name: Shutdown stack
         if: always()
