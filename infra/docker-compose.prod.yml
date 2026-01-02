@@ -24,7 +24,7 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT}:3000"
-    command: ["sh","-c","npx prisma migrate deploy && node src/server.js"]
+    command: ["sh","-c","node src/server.js"]
 
   worker:
     build:
@@ -34,7 +34,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["sh","-c","npx prisma migrate deploy && node src/worker.js"]
+    command: ["sh","-c","node src/worker.js"]
 
   web:
     build:
