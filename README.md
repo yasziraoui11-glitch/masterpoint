@@ -1,29 +1,34 @@
-# MASTERPOINT – Production Template
+# MASTERPOINT (masterpoint_production_fixed)
 
-This repository is a production-oriented baseline:
-- Postgres persistence (no JSON files)
-- Prisma migrations
-- Separate API + Worker process
-- Docker + docker-compose (prod + local)
-- Structured logging, health/readiness, security middleware
-- OpenAPI/Swagger
+## Local Quickstart
 
-## Quick start (local)
+### Prerequisites
+- Docker Desktop running
+- Node is NOT required locally (everything runs in containers)
+
+### 1) Create .env
 ```bash
-cp infra/.env.example .env
-docker compose up --build
+cp .env.example .env
 ```
 
-API:
-- http://localhost:3000/health
-- http://localhost:3000/ready
-- http://localhost:3000/docs
+### 2) Start stack + run smoke test
+```bash
+./tools/dev_up.sh
+```
 
-Frontend:
-- http://localhost:8080
+### 3) Stop stack + wipe volumes (clean slate)
+```bash
+./tools/dev_down.sh
+```
 
-## Production
-Use `docker compose -f infra/docker-compose.prod.yml up -d` after providing real secrets and domain settings.
+## Compose wrapper
+```bash
+./tools/dc.sh ps
+./tools/dc.sh logs --tail=200 api
+./tools/dc.sh down -v
+```
 
-## Notes (cannot be auto-verified here)
-Production readiness still depends on your environment (TLS, DNS, secrets management, backups, monitoring).
+## Endpoints (via web proxy)
+- Health: http://localhost:${WEB_PORT:-8080}/api/health
+- OpenAPI JSON: http://localhost:${WEB_PORT:-8080}/api/openapi.json
+- OpenAPI YAML: http://localhost:${WEB_PORT:-8080}/api/openapi.yaml
