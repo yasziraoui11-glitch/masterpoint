@@ -32,3 +32,11 @@ cp .env.example .env
 - Health: http://localhost:${WEB_PORT:-8080}/api/health
 - OpenAPI JSON: http://localhost:${WEB_PORT:-8080}/api/openapi.json
 - OpenAPI YAML: http://localhost:${WEB_PORT:-8080}/api/openapi.yaml
+
+
+## Frontend (Vite) wrapper
+```bash
+./tools/frontend_up.sh
+./tools/frontend_down.sh
+```
+Frontend: http://localhost:5173
